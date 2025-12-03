@@ -24,3 +24,65 @@ CopForge uses a decoupled architecture based on two protocols:
 
 - **A2A Protocol** (Agent-to-Agent): For communication between intelligent agents that require reasoning or orchestration
 - **MCP** (Model Context Protocol): For exposing deterministic tools that agents can invoke
+
+### Project scaffolding
+
+```bash
+copforge/
+├── README.md
+├── pyproject.toml
+├── src
+│   ├── __init__.py
+│   ├── agents
+│   ├── core
+│   ├── mcp_servers
+│   ├── models
+│   │   ├── cop.py
+│   │   └── sensor.py
+│   └── utils
+└── tests
+```
+
+## Installation
+
+```bash
+# Clone and setup
+git clone https://github.com/MartinezAgullo/copforge.git
+cd copforge
+
+# Create virtual environment (using UV recommended)
+uv venv && source .venv/bin/activate
+```
+
+###  Telemetry
+
+CopForge implements a dual-stack observability strategy:
+
+| System | Purpose | Use Cases |
+| --- | --- | --- |
+| **LangSmith** | LLM tracing | Prompt debugging, token usage, chain visualization |
+| **OpenTelemetry** | Infrastructure tracing | A2A calls, MCP tool invocations, network latency |
+
+LangSmith captures LLM-specific traces (prompts, completions, token counts), while OpenTelemetry handles everything else (HTTP requests, database queries, inter-service communication). Both can be correlated for end-to-end visibility.
+
+**Configuration** (in `.env`):
+
+bash
+
+```
+# LangSmith
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_your-key
+LANGCHAIN_PROJECT=copforge
+
+# OpenTelemetry
+TELEMETRY_OTEL_ENABLED=true
+TELEMETRY_OTEL_EXPORTER_TYPE=otlp          # or "console" for local dev
+TELEMETRY_OTEL_EXPORTER_ENDPOINT=http://localhost:4317  # Jaeger/Grafana
+```
+
+For local development, use `TELEMETRY_OTEL_EXPORTER_TYPE=console` to print traces to stdout, or run a local Jaeger instance.
+
+### License
+
+LGPL-3.0-or-later

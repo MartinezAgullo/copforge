@@ -3,7 +3,6 @@ name = "copforge"
 version = "0.1.0"
 description = "Modular information fusion system with A2A protocol for building Common Operational Pictures"
 readme = "README.md"
-license = { text = "LGPL-3.0-or-later" }
 requires-python = ">=3.11"
 authors = [
     { name = "Pablo Martínez-Agulló", email = "pablo.martinez.agullo@gmail.com" }
@@ -18,7 +17,7 @@ keywords = [
     "multi-agent",
 ]
 classifiers = [
-    "License :: OSI Approved :: LGPL-3.0-or-later",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -93,7 +92,7 @@ copforge = "copforge.cli:main"
 Homepage = "https://github.com/MartinezAgullo/copforge"
 Documentation = "https://github.com/MartinezAgullo/copforge#readme"
 Repository = "https://github.com/MartinezAgullo/copforge"
-Issues = "https://github.com/MartinezAgullo/copforge/issues"
+# Issues = "https://github.com/MartinezAgullo/copforge/issues"
 
 [build-system]
 requires = ["hatchling"]
