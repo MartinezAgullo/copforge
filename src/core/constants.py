@@ -5,7 +5,6 @@ Centralized definitions for sensor types, classifications, access levels,
 and other configuration that needs to be consistent across the system.
 """
 
-
 # =============================================================================
 # Sensor Types
 # =============================================================================

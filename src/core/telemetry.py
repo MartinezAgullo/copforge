@@ -106,10 +106,15 @@ def setup_opentelemetry() -> Any | None:
 
     try:
         from opentelemetry import trace
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+            OTLPSpanExporter,
+        )
         from opentelemetry.sdk.resources import SERVICE_NAME, Resource
         from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+        from opentelemetry.sdk.trace.export import (
+            BatchSpanProcessor,
+            ConsoleSpanExporter,
+        )
 
         # Create resource with service name
         resource = Resource(attributes={SERVICE_NAME: telemetry.otel_service_name})
@@ -261,6 +266,7 @@ def traced_operation(
 
     # The @contextmanager decorator simplify the creating of context managers.
     # It allows you to write a generator function instead of defining a class with __enter__ and __exit__ methods.
+
 
 def trace_function(
     tracer_name: str,

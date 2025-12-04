@@ -54,6 +54,10 @@ cd copforge
 
 # Create virtual environment (using UV recommended)
 uv venv && source .venv/bin/activate
+
+# Install pre-commit hooks
+pre-commit install
+pre-commit install --hook-type commit-msg
 ```
 
 ## Telemetry
@@ -86,6 +90,6 @@ For local development, use `TELEMETRY_OTEL_EXPORTER_TYPE=console` to print trace
 ## License
 
 LGPL-3.0-or-later
-<!-- 
-tree -I "__pycache__|__init__.py|uv.lock|README.md" 
+<!--
+tree -I "__pycache__|__init__.py|uv.lock|README.md"
 -->

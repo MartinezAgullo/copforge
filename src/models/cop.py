@@ -222,9 +222,7 @@ class ThreatAssessment(BaseModel):
 
     # Assessment details
     reasoning: str = Field(..., description="Natural language explanation of the threat")
-    confidence: float = Field(
-        ..., ge=0.0, le=1.0, description="Confidence in this assessment"
-    )
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in this assessment")
     timestamp: datetime = Field(..., description="When this assessment was made")
 
     # Geospatial context
