@@ -18,19 +18,19 @@ from src.models.cop import (
     ThreatAssessment,
 )
 from src.models.sensor import (
-    # Type aliases
-    FileType,
-    SensorType,
-    # Core models
-    FileReference,
-    SensorMessage,
-    SensorMessageBatch,
     # Format-specific models
     ASTERIXMessage,
     ASTERIXTrack,
     DroneData,
+    # Core models
+    FileReference,
+    # Type aliases
+    FileType,
     ManualReport,
     RadioData,
+    SensorMessage,
+    SensorMessageBatch,
+    SensorType,
     TrackQuality,
 )
 

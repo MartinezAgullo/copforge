@@ -62,7 +62,7 @@ jobs:
       - name: Run MyPy
         run: |
           source .venv/bin/activate
-          mypy src/copforge/ --ignore-missing-imports
+          mypy src/ --ignore-missing-imports
 
   test:
     name: Tests

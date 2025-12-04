@@ -35,7 +35,7 @@ class A2ASettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="A2A_")
 
     # Ingest Agent
-    ingest_agent_host: str = "0.0.0.0"
+    ingest_agent_host: str = "127.0.0.1"
     ingest_agent_port: int = 8001
     ingest_agent_name: str = "CopForge Ingest Agent"
     ingest_agent_version: str = "0.1.0"
@@ -47,11 +47,11 @@ class MCPSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MCP_")
 
     # Firewall MCP Server
-    firewall_host: str = "0.0.0.0"
+    firewall_host: str = "127.0.0.1"
     firewall_port: int = 8010
 
     # COP Fusion MCP Server
-    cop_fusion_host: str = "0.0.0.0"
+    cop_fusion_host: str = "127.0.0.1"
     cop_fusion_port: int = 8011
 
 

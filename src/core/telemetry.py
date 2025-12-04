@@ -19,9 +19,10 @@ Usage:
 """
 
 import os
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Generator, TypeVar
+from typing import Any, TypeVar
 
 import structlog
 
@@ -258,6 +259,8 @@ def traced_operation(
                 span.set_attribute(key, value)
         yield span
 
+    # The @contextmanager decorator simplify the creating of context managers.
+    # It allows you to write a generator function instead of defining a class with __enter__ and __exit__ methods.
 
 def trace_function(
     tracer_name: str,
@@ -324,6 +327,6 @@ class _NoOpTracer:
     """No-op tracer for when OpenTelemetry is not available."""
 
     @contextmanager
-    def start_as_current_span(self, name: str) -> Generator[_NoOpSpan, None, None]:
+    def start_as_current_span(self, _: str) -> Generator[_NoOpSpan, None, None]:
         """Return a no-op span."""
         yield _NoOpSpan()

@@ -29,14 +29,16 @@ CopForge uses a decoupled architecture based on two protocols:
 
 ```bash
 copforge/
-├── README.md
 ├── pyproject.toml
 ├── src
-│   ├── __init__.py
 │   ├── agents
 │   ├── core
+│   │   ├── config.py
+│   │   ├── constants.py
+│   │   └── telemetry.py
 │   ├── mcp_servers
 │   ├── models
+│   │   ├── REAMDE.md
 │   │   ├── cop.py
 │   │   └── sensor.py
 │   └── utils
@@ -54,7 +56,7 @@ cd copforge
 uv venv && source .venv/bin/activate
 ```
 
-###  Telemetry
+## Telemetry
 
 CopForge implements a dual-stack observability strategy:
 
@@ -63,16 +65,14 @@ CopForge implements a dual-stack observability strategy:
 | **LangSmith** | LLM tracing | Prompt debugging, token usage, chain visualization |
 | **OpenTelemetry** | Infrastructure tracing | A2A calls, MCP tool invocations, network latency |
 
-LangSmith captures LLM-specific traces (prompts, completions, token counts), while OpenTelemetry handles everything else (HTTP requests, database queries, inter-service communication). Both can be correlated for end-to-end visibility.
+LangSmith captures LLM-specific traces (prompts, completions, token counts), while OpenTelemetry handles everything else (HTTP requests, database queries, inter-service communication). Both can be correlated for end-to-end visibility. The outputs of Langsmith can be converted to OTel format.
 
 **Configuration** (in `.env`):
 
-bash
-
-```
+```bash
 # LangSmith
 LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=lsv2_your-key
+LANGCHAIN_API_KEY=your-key
 LANGCHAIN_PROJECT=copforge
 
 # OpenTelemetry
@@ -83,6 +83,9 @@ TELEMETRY_OTEL_EXPORTER_ENDPOINT=http://localhost:4317  # Jaeger/Grafana
 
 For local development, use `TELEMETRY_OTEL_EXPORTER_TYPE=console` to print traces to stdout, or run a local Jaeger instance.
 
-### License
+## License
 
 LGPL-3.0-or-later
+<!-- 
+tree -I "__pycache__|__init__.py|uv.lock|README.md" 
+-->

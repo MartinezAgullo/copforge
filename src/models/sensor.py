@@ -7,11 +7,10 @@ before normalization into EntityCOP format.
 Based on TIFDA's sensor_formats.py with improvements for modularity.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # =============================================================================
 # Type Definitions
@@ -56,7 +55,7 @@ class SensorMessage(BaseModel):
 
     # Timing
     timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Message timestamp",
     )
 

@@ -5,11 +5,10 @@ These models represent normalized entities in the operational picture,
 regardless of their original sensor source.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # =============================================================================
 # Type Definitions
@@ -134,7 +133,7 @@ class EntityCOP(BaseModel):
         description="Confidence in this information (0.0-1.0)",
     )
     timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="When this information was recorded",
     )
 
