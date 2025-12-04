@@ -22,12 +22,12 @@ SensorType = Literal[
     "drone",
     "manual",
     "radio",
-    "ais",       # Automatic Identification System (ships)
-    "ads-b",     # Automatic Dependent Surveillance-Broadcast (aircraft)
-    "link16",    # Tactical data link
+    "ais",  # Automatic Identification System (ships)
+    "ads-b",  # Automatic Dependent Surveillance-Broadcast (aircraft)
+    "link16",  # Tactical data link
     "acoustic",  # Acoustic sensors (sonar, microphones)
-    "sigint",    # Signals intelligence
-    "imint",     # Imagery intelligence
+    "sigint",  # Signals intelligence
+    "imint",  # Imagery intelligence
     "other",
 ]
 
@@ -192,7 +192,7 @@ class SensorMessageBatch(BaseModel):
         """Return number of messages in batch."""
         return len(self.messages)
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
         """Iterate over messages."""
         return iter(self.messages)
 
@@ -211,9 +211,7 @@ class TrackQuality(BaseModel):
     plot_count: int | None = Field(
         default=None, description="Number of plots used to generate this track"
     )
-    ssr_code: str | None = Field(
-        default=None, description="SSR transponder code (if available)"
-    )
+    ssr_code: str | None = Field(default=None, description="SSR transponder code (if available)")
 
 
 class ASTERIXTrack(BaseModel):
@@ -341,9 +339,7 @@ class ManualReport(BaseModel):
     operator_name: str = Field(..., description="Name or ID of reporting operator")
     content: str = Field(..., description="Report text content")
     latitude: float | None = Field(default=None, ge=-90, le=90, description="Latitude of event")
-    longitude: float | None = Field(
-        default=None, ge=-180, le=180, description="Longitude of event"
-    )
+    longitude: float | None = Field(default=None, ge=-180, le=180, description="Longitude of event")
     altitude_m: float | None = Field(default=None, description="Altitude of event in meters")
 
     model_config = {

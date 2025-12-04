@@ -61,7 +61,7 @@ class LLMSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LLM_")
 
     # Default provider
-    default_provider: Literal["openai", "anthropic"] = "openai"
+    default_provider: Literal["openai", "anthropic", "deepseek", "google", "groq"] = "openai"
 
     # OpenAI
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
@@ -70,6 +70,18 @@ class LLMSettings(BaseSettings):
     # Anthropic
     anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     anthropic_model: str = "claude-sonnet-4-20250514"
+
+    # DeepSeek
+    deepseek_api_key: SecretStr | None = Field(default=None, alias="DEEPSEEK_API_KEY")
+    deepseek_model: str = "deepseek-chat"
+
+    # Google (Gemini)
+    google_api_key: SecretStr | None = Field(default=None, alias="GOOGLE_API_KEY")
+    google_model: str = "gemini-2.0-flash"
+
+    # Groq
+    groq_api_key: SecretStr | None = Field(default=None, alias="GROQ_API_KEY")
+    groq_model: str = "llama-3.3-70b-versatile"
 
 
 class Settings(BaseSettings):
