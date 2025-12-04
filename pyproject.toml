@@ -86,7 +86,7 @@ all = [
 
 [project.scripts]
 # CLI entry points (future)
-copforge = "copforge.cli:main"
+copforge = "src.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/MartinezAgullo/copforge"
@@ -129,7 +129,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["agents", "mcp_servers", "models", "core", "utils"]
+known-first-party = ["src"]
 
 # === Pytest Configuration ===
 [tool.pytest.ini_options]
