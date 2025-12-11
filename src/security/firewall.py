@@ -1,7 +1,7 @@
 """
 CopForge Security Firewall.
 
-Multi-layer security validation for incoming sensor data.
+Multi-layer security validation for incoming sensor data and outgoing transmissions.
 
 Protects against:
 - Prompt injection attacks
@@ -16,18 +16,18 @@ Usage:
     # Validate incoming sensor message
     result = validate_sensor_input(sensor_msg)
     if not result.is_valid:
-        logger.error(f"Blocked: {result.error}")
+        logger.error(f"Firewall blocked: {result.error}")
 
-    # Validate entity before adding to COP
+    # Validate entity before COP insertion
     result = validate_entity(entity)
+    if not result.is_valid:
+        logger.error(f"Entity invalid: {result.error}")
 """
-
-from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from src.core.constants import (
     ACCESS_LEVELS,
@@ -36,24 +36,27 @@ from src.core.constants import (
     SENSOR_TYPES,
     can_access_classification,
 )
+from src.core.telemetry import get_tracer, traced_operation
+from src.models.cop import EntityCOP
+from src.models.sensor import SensorMessage
 
-if TYPE_CHECKING:
-    from src.models.cop import EntityCOP
-    from src.models.sensor import SensorMessage
+# Get tracer for this module
+tracer = get_tracer("copforge.security.firewall")
 
 
 # =============================================================================
-# Validation Result
+# Result Types
 # =============================================================================
 
 
 @dataclass
-class ValidationResult:
+class FirewallResult:
     """Result of a firewall validation check."""
 
     is_valid: bool
     error: str = ""
     warnings: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
         """Allow using result in boolean context."""
@@ -96,7 +99,7 @@ PROMPT_INJECTION_PATTERNS: list[str] = [
 ]
 
 # Suspicious keywords that shouldn't appear in tactical data
-SUSPICIOUS_KEYWORDS: set[str] = {
+SUSPICIOUS_KEYWORDS: list[str] = [
     "ignore",
     "disregard",
     "forget",
@@ -120,168 +123,12 @@ SUSPICIOUS_KEYWORDS: set[str] = {
     "exec(",
     "eval(",
     "compile(",
-}
-
-# Compiled regex patterns for performance
-_COMPILED_PATTERNS: list[re.Pattern[str]] | None = None
-
-
-def _get_compiled_patterns() -> list[re.Pattern[str]]:
-    """Get compiled regex patterns (lazy initialization)."""
-    global _COMPILED_PATTERNS
-    if _COMPILED_PATTERNS is None:
-        _COMPILED_PATTERNS = [
-            re.compile(pattern, re.IGNORECASE) for pattern in PROMPT_INJECTION_PATTERNS
-        ]
-    return _COMPILED_PATTERNS
+]
 
 
 # =============================================================================
 # Internal Validation Functions
 # =============================================================================
-
-
-def _check_prompt_injection(text: str) -> tuple[bool, list[str]]:
-    """
-    Check for prompt injection patterns in text.
-
-    Args:
-        text: Text to scan.
-
-    Returns:
-        Tuple of (is_safe, detected_patterns).
-    """
-    detected: list[str] = []
-    text_lower = text.lower()
-
-    # Check regex patterns
-    for pattern in _get_compiled_patterns():
-        if pattern.search(text_lower):
-            detected.append(f"Injection pattern detected: {pattern.pattern[:40]}...")
-
-    # Check suspicious keywords
-    for keyword in SUSPICIOUS_KEYWORDS:
-        if keyword.lower() in text_lower:
-            detected.append(f"Suspicious keyword: '{keyword}'")
-
-    return len(detected) == 0, detected
-
-
-def _scan_text_fields(
-    data: dict[str, Any],
-    path: str = "",
-) -> tuple[bool, list[str]]:
-    """
-    Recursively scan all text fields in data for injection attempts.
-
-    Args:
-        data: Dictionary to scan.
-        path: Current path in nested structure (for error reporting).
-
-    Returns:
-        Tuple of (is_safe, issues).
-    """
-    issues: list[str] = []
-
-    for key, value in data.items():
-        current_path = f"{path}.{key}" if path else key
-
-        if isinstance(value, str):
-            is_safe, detected = _check_prompt_injection(value)
-            if not is_safe:
-                issues.extend(f"{current_path}: {d}" for d in detected)
-
-        elif isinstance(value, dict):
-            is_safe, nested = _scan_text_fields(value, current_path)
-            if not is_safe:
-                issues.extend(nested)
-
-        elif isinstance(value, list):
-            for i, item in enumerate(value):
-                item_path = f"{current_path}[{i}]"
-                if isinstance(item, str):
-                    is_safe, detected = _check_prompt_injection(item)
-                    if not is_safe:
-                        issues.extend(f"{item_path}: {d}" for d in detected)
-                elif isinstance(item, dict):
-                    is_safe, nested = _scan_text_fields(item, item_path)
-                    if not is_safe:
-                        issues.extend(nested)
-
-    return len(issues) == 0, issues
-
-
-def _check_coordinate_validity(lat: float, lon: float) -> tuple[bool, str]:
-    """
-    Validate geographic coordinates.
-
-    Args:
-        lat: Latitude value.
-        lon: Longitude value.
-
-    Returns:
-        Tuple of (is_valid, error_message).
-    """
-    if not isinstance(lat, int | float) or not isinstance(lon, int | float):
-        return False, f"Coordinates must be numeric (lat={lat}, lon={lon})"
-
-    if not -90 <= lat <= 90:
-        return False, f"Latitude {lat} out of valid range [-90, 90]"
-
-    if not -180 <= lon <= 180:
-        return False, f"Longitude {lon} out of valid range [-180, 180]"
-
-    return True, ""
-
-
-def _scan_coordinates_in_data(data: dict[str, Any]) -> tuple[bool, list[str]]:
-    """
-    Scan data for coordinate fields and validate them.
-
-    Args:
-        data: Data dictionary to scan.
-
-    Returns:
-        Tuple of (is_valid, issues).
-    """
-    issues: list[str] = []
-
-    # Check nested location object
-    if "location" in data and isinstance(data["location"], dict):
-        loc = data["location"]
-        lat = loc.get("lat")
-        lon = loc.get("lon")
-        if lat is not None and lon is not None:
-            is_valid, error = _check_coordinate_validity(lat, lon)
-            if not is_valid:
-                issues.append(f"location: {error}")
-
-    # Check direct lat/lon fields
-    lat = data.get("latitude") or data.get("lat")
-    lon = data.get("longitude") or data.get("lon")
-    if lat is not None and lon is not None:
-        is_valid, error = _check_coordinate_validity(lat, lon)
-        if not is_valid:
-            issues.append(f"coordinates: {error}")
-
-    # Recursively check nested structures
-    for key, value in data.items():
-        if key == "location":
-            continue
-
-        if isinstance(value, dict):
-            is_valid, nested = _scan_coordinates_in_data(value)
-            if not is_valid:
-                issues.extend(f"{key}.{i}" for i in nested)
-
-        elif isinstance(value, list):
-            for idx, item in enumerate(value):
-                if isinstance(item, dict):
-                    is_valid, nested = _scan_coordinates_in_data(item)
-                    if not is_valid:
-                        issues.extend(f"{key}[{idx}].{i}" for i in nested)
-
-    return len(issues) == 0, issues
 
 
 def _check_sensor_authorization(
@@ -295,7 +142,7 @@ def _check_sensor_authorization(
     Args:
         sensor_id: Sensor identifier.
         sensor_type: Claimed sensor type.
-        authorized_sensors: Optional whitelist of authorized sensors.
+        authorized_sensors: Dict of authorized sensors (sensor_id -> config).
 
     Returns:
         Tuple of (is_authorized, error_message).
@@ -304,22 +151,25 @@ def _check_sensor_authorization(
     if authorized_sensors is None:
         return True, ""
 
+    # Check if sensor is in whitelist
     if sensor_id not in authorized_sensors:
         return False, f"Unauthorized sensor: {sensor_id}"
 
+    # Validate sensor type matches configuration
     sensor_config = authorized_sensors[sensor_id]
     expected_type = sensor_config.get("sensor_type")
 
     if expected_type and expected_type != sensor_type:
         return False, f"Sensor type mismatch: expected {expected_type}, got {sensor_type}"
 
+    # Check if sensor is enabled
     if not sensor_config.get("enabled", True):
         return False, f"Sensor {sensor_id} is disabled"
 
     return True, ""
 
 
-def _check_message_structure(sensor_msg: SensorMessage) -> tuple[bool, str]:
+def _check_sensor_message_structure(sensor_msg: SensorMessage) -> tuple[bool, str]:
     """
     Validate SensorMessage structure.
 
@@ -338,21 +188,218 @@ def _check_message_structure(sensor_msg: SensorMessage) -> tuple[bool, str]:
     if sensor_msg.timestamp > now:
         return False, "Timestamp is in the future"
 
-    # Validate data field
-    if isinstance(sensor_msg.data, str):
-        if not sensor_msg.data.strip():
-            return False, "Data field is empty"
-    elif isinstance(sensor_msg.data, dict):
-        if not sensor_msg.data:
-            return False, "Data field is empty"
-    else:
+    # Validate data field exists and is dict or str
+    if not isinstance(sensor_msg.data, dict | str):
         return False, "Data field must be a dictionary or string"
+
+    # If data is empty, that's suspicious
+    if not sensor_msg.data:
+        return False, "Data field is empty"
 
     return True, ""
 
 
+def _check_coordinate_validity(lat: float, lon: float) -> tuple[bool, str]:
+    """
+    Validate geographic coordinates are within valid ranges.
+
+    Args:
+        lat: Latitude.
+        lon: Longitude.
+
+    Returns:
+        Tuple of (is_valid, error_message).
+    """
+    if not isinstance(lat, int | float) or not isinstance(lon, int | float):
+        return False, f"Coordinates must be numeric (lat={lat}, lon={lon})"
+
+    if not (-90 <= lat <= 90):
+        return False, f"Latitude {lat} out of valid range [-90, 90]"
+
+    if not (-180 <= lon <= 180):
+        return False, f"Longitude {lon} out of valid range [-180, 180]"
+
+    return True, ""
+
+
+def _check_prompt_injection(text: str) -> tuple[bool, list[str]]:
+    """
+    Check for prompt injection patterns in text.
+
+    Args:
+        text: Text to scan.
+
+    Returns:
+        Tuple of (is_safe, list_of_detected_patterns).
+    """
+    detected_patterns: list[str] = []
+    text_lower = text.lower()
+
+    # Check regex patterns
+    for pattern in PROMPT_INJECTION_PATTERNS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            detected_patterns.append(f"Injection pattern: {pattern[:50]}...")
+
+    # Check suspicious keywords
+    for keyword in SUSPICIOUS_KEYWORDS:
+        if keyword.lower() in text_lower:
+            detected_patterns.append(f"Suspicious keyword: '{keyword}'")
+
+    is_safe = len(detected_patterns) == 0
+    return is_safe, detected_patterns
+
+
+def _scan_text_fields(
+    data: dict[str, Any],
+    path: str = "",
+) -> tuple[bool, list[str]]:
+    """
+    Recursively scan all text fields in data for injection attempts.
+
+    Args:
+        data: Dictionary to scan.
+        path: Current path in nested structure (for error reporting).
+
+    Returns:
+        Tuple of (is_safe, list_of_issues).
+    """
+    all_issues: list[str] = []
+
+    for key, value in data.items():
+        current_path = f"{path}.{key}" if path else key
+
+        # If value is string, check it
+        if isinstance(value, str):
+            is_safe, issues = _check_prompt_injection(value)
+            if not is_safe:
+                for issue in issues:
+                    all_issues.append(f"{current_path}: {issue}")
+
+        # If value is dict, recurse
+        elif isinstance(value, dict):
+            is_safe, issues = _scan_text_fields(value, current_path)
+            if not is_safe:
+                all_issues.extend(issues)
+
+        # If value is list, check each item
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                if isinstance(item, str):
+                    is_safe, issues = _check_prompt_injection(item)
+                    if not is_safe:
+                        for issue in issues:
+                            all_issues.append(f"{current_path}[{i}]: {issue}")
+                elif isinstance(item, dict):
+                    is_safe, issues = _scan_text_fields(item, f"{current_path}[{i}]")
+                    if not is_safe:
+                        all_issues.extend(issues)
+
+    is_safe = len(all_issues) == 0
+    return is_safe, all_issues
+
+
+def _scan_coordinates_in_data(data: dict[str, Any]) -> tuple[bool, list[str]]:
+    """
+    Scan data for coordinate fields and validate them.
+
+    Args:
+        data: Data dictionary to scan.
+
+    Returns:
+        Tuple of (is_valid, list_of_issues).
+    """
+    issues: list[str] = []
+
+    # Check top-level coordinates
+    if "location" in data and isinstance(data["location"], dict):
+        lat = data["location"].get("lat")
+        lon = data["location"].get("lon")
+
+        if lat is not None and lon is not None:
+            is_valid, error = _check_coordinate_validity(lat, lon)
+            if not is_valid:
+                issues.append(f"location: {error}")
+
+    # Check direct lat/lon fields
+    lat = data.get("latitude") or data.get("lat")
+    lon = data.get("longitude") or data.get("lon")
+
+    if lat is not None and lon is not None:
+        is_valid, error = _check_coordinate_validity(lat, lon)
+        if not is_valid:
+            issues.append(f"coordinates: {error}")
+
+    # Recursively check nested structures
+    for key, value in data.items():
+        if isinstance(value, dict) and key != "location":
+            is_valid, nested_issues = _scan_coordinates_in_data(value)
+            if not is_valid:
+                issues.extend([f"{key}.{issue}" for issue in nested_issues])
+
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                if isinstance(item, dict):
+                    is_valid, nested_issues = _scan_coordinates_in_data(item)
+                    if not is_valid:
+                        issues.extend([f"{key}[{i}].{issue}" for issue in nested_issues])
+
+    is_valid = len(issues) == 0
+    return is_valid, issues
+
+
+def _check_classification_validity(classification: str) -> tuple[bool, str]:
+    """
+    Validate entity classification (IFF affiliation).
+
+    Args:
+        classification: Classification string.
+
+    Returns:
+        Tuple of (is_valid, error_message).
+    """
+    if classification.lower() not in CLASSIFICATIONS:
+        return (
+            False,
+            f"Invalid classification '{classification}'. Must be one of: {CLASSIFICATIONS}",
+        )
+    return True, ""
+
+
+def _check_information_classification_validity(level: str) -> tuple[bool, str]:
+    """
+    Validate security classification level.
+
+    Args:
+        level: Classification level string.
+
+    Returns:
+        Tuple of (is_valid, error_message).
+    """
+    if level.upper() not in CLASSIFICATION_LEVEL_SET:
+        return (
+            False,
+            f"Invalid classification level '{level}'. Must be one of: {CLASSIFICATION_LEVEL_SET}",
+        )
+    return True, ""
+
+
+def _check_access_level_validity(access_level: str) -> tuple[bool, str]:
+    """
+    Validate access level.
+
+    Args:
+        access_level: Access level string.
+
+    Returns:
+        Tuple of (is_valid, error_message).
+    """
+    if access_level.lower() not in ACCESS_LEVELS:
+        return False, f"Invalid access level '{access_level}'. Must be one of: {ACCESS_LEVELS}"
+    return True, ""
+
+
 # =============================================================================
-# Public API
+# Main Firewall Functions
 # =============================================================================
 
 
@@ -360,7 +407,7 @@ def validate_sensor_input(
     sensor_msg: SensorMessage,
     authorized_sensors: dict[str, dict[str, Any]] | None = None,
     strict_mode: bool = True,
-) -> ValidationResult:
+) -> FirewallResult:
     """
     Validate incoming sensor message for security threats.
 
@@ -372,193 +419,351 @@ def validate_sensor_input(
 
     Args:
         sensor_msg: Sensor message to validate.
-        authorized_sensors: Optional whitelist of authorized sensors.
-        strict_mode: If True, fail on any security issue.
+        authorized_sensors: Dict of authorized sensors (optional whitelist).
+        strict_mode: If True, fail on any security issue. If False, add warnings.
 
     Returns:
-        ValidationResult with is_valid, error, and warnings.
+        FirewallResult with validation status and details.
 
     Example:
-        result = validate_sensor_input(sensor_msg)
-        if not result.is_valid:
-            logger.error(f"Blocked: {result.error}")
-            return
-
-        if result.warnings:
-            logger.warning(f"Warnings: {result.warnings}")
+        >>> result = validate_sensor_input(sensor_msg)
+        >>> if not result.is_valid:
+        ...     print(f"Blocked: {result.error}")
     """
-    warnings: list[str] = []
+    with traced_operation(
+        tracer,
+        "validate_sensor_input",
+        {
+            "sensor_id": sensor_msg.sensor_id,
+            "sensor_type": sensor_msg.sensor_type,
+            "strict_mode": strict_mode,
+        },
+    ) as span:
+        warnings: list[str] = []
+        details: dict[str, Any] = {
+            "sensor_id": sensor_msg.sensor_id,
+            "sensor_type": sensor_msg.sensor_type,
+            "checks_passed": [],
+            "checks_failed": [],
+        }
 
-    # Check 1: Sensor authorization
-    is_authorized, error = _check_sensor_authorization(
-        sensor_msg.sensor_id,
-        sensor_msg.sensor_type,
-        authorized_sensors,
-    )
-    if not is_authorized:
-        return ValidationResult(is_valid=False, error=f"[FIREWALL] {error}")
+        # Check 1: Sensor authorization
+        is_authorized, error = _check_sensor_authorization(
+            sensor_msg.sensor_id,
+            sensor_msg.sensor_type,
+            authorized_sensors,
+        )
+        if not is_authorized:
+            details["checks_failed"].append("sensor_authorization")
+            span.set_attribute("firewall.result", "blocked")
+            span.set_attribute("firewall.reason", "sensor_authorization")
+            return FirewallResult(
+                is_valid=False,
+                error=f"[FIREWALL] {error}",
+                details=details,
+            )
+        details["checks_passed"].append("sensor_authorization")
 
-    # Check 2: Message structure
-    is_valid, error = _check_message_structure(sensor_msg)
-    if not is_valid:
-        return ValidationResult(is_valid=False, error=f"[FIREWALL] Structure: {error}")
-
-    # Check 3: Prompt injection (only for dict data)
-    if isinstance(sensor_msg.data, dict):
-        is_safe, issues = _scan_text_fields(sensor_msg.data)
-        if not is_safe:
-            error_msg = "[FIREWALL] Prompt injection detected:\n" + "\n".join(issues)
-            if strict_mode:
-                return ValidationResult(is_valid=False, error=error_msg)
-            warnings.extend(issues)
-
-        # Check 4: Coordinate validation
-        is_valid, coord_issues = _scan_coordinates_in_data(sensor_msg.data)
+        # Check 2: Message structure validation
+        is_valid, error = _check_sensor_message_structure(sensor_msg)
         if not is_valid:
-            error_msg = "[FIREWALL] Invalid coordinates:\n" + "\n".join(coord_issues)
-            return ValidationResult(is_valid=False, error=error_msg)
+            details["checks_failed"].append("message_structure")
+            span.set_attribute("firewall.result", "blocked")
+            span.set_attribute("firewall.reason", "message_structure")
+            return FirewallResult(
+                is_valid=False,
+                error=f"[FIREWALL] Structure error: {error}",
+                details=details,
+            )
+        details["checks_passed"].append("message_structure")
 
-    return ValidationResult(is_valid=True, warnings=warnings)
+        # Check 3: Scan all text fields for prompt injection
+        if isinstance(sensor_msg.data, dict):
+            is_safe, issues = _scan_text_fields(sensor_msg.data)
+            if not is_safe:
+                error_msg = "[FIREWALL] Prompt injection detected:\n" + "\n".join(issues)
+                if strict_mode:
+                    details["checks_failed"].append("prompt_injection")
+                    details["injection_issues"] = issues
+                    span.set_attribute("firewall.result", "blocked")
+                    span.set_attribute("firewall.reason", "prompt_injection")
+                    return FirewallResult(
+                        is_valid=False,
+                        error=error_msg,
+                        details=details,
+                    )
+                else:
+                    # In non-strict mode, add warning but continue
+                    warnings.append(error_msg)
+            details["checks_passed"].append("prompt_injection")
+
+            # Check 4: Validate all coordinates in data
+            is_valid, issues = _scan_coordinates_in_data(sensor_msg.data)
+            if not is_valid:
+                error_msg = "[FIREWALL] Invalid coordinates:\n" + "\n".join(issues)
+                details["checks_failed"].append("coordinate_validation")
+                details["coordinate_issues"] = issues
+                span.set_attribute("firewall.result", "blocked")
+                span.set_attribute("firewall.reason", "invalid_coordinates")
+                return FirewallResult(
+                    is_valid=False,
+                    error=error_msg,
+                    details=details,
+                )
+            details["checks_passed"].append("coordinate_validation")
+
+        # All checks passed
+        span.set_attribute("firewall.result", "passed")
+        span.set_attribute("firewall.warnings_count", len(warnings))
+
+        return FirewallResult(
+            is_valid=True,
+            warnings=warnings,
+            details=details,
+        )
 
 
-def validate_entity(entity: EntityCOP) -> ValidationResult:
+def validate_entity(entity: EntityCOP) -> FirewallResult:
     """
     Validate EntityCOP for security and data integrity.
+
+    Checks:
+    - IFF classification validity
+    - Information classification validity
+    - Coordinate validity
+    - Confidence range
+    - Speed and heading ranges
+    - Prompt injection in comments
 
     Args:
         entity: EntityCOP to validate.
 
     Returns:
-        ValidationResult with is_valid and error.
+        FirewallResult with validation status and details.
 
     Example:
-        result = validate_entity(entity)
-        if not result:
-            raise ValueError(result.error)
+        >>> result = validate_entity(entity)
+        >>> if not result.is_valid:
+        ...     print(f"Invalid: {result.error}")
     """
-    # Check IFF classification
-    if entity.classification not in CLASSIFICATIONS:
-        return ValidationResult(
-            is_valid=False,
-            error=f"[FIREWALL] Invalid classification '{entity.classification}'",
+    with traced_operation(
+        tracer,
+        "validate_entity",
+        {
+            "entity_id": entity.entity_id,
+            "entity_type": entity.entity_type,
+        },
+    ) as span:
+        details: dict[str, Any] = {
+            "entity_id": entity.entity_id,
+            "entity_type": entity.entity_type,
+            "checks_passed": [],
+            "checks_failed": [],
+        }
+
+        # Check IFF classification
+        is_valid, error = _check_classification_validity(entity.classification)
+        if not is_valid:
+            details["checks_failed"].append("classification")
+            span.set_attribute("firewall.result", "invalid")
+            return FirewallResult(is_valid=False, error=f"[FIREWALL] {error}", details=details)
+        details["checks_passed"].append("classification")
+
+        # Check information classification
+        is_valid, error = _check_information_classification_validity(
+            entity.information_classification
         )
+        if not is_valid:
+            details["checks_failed"].append("information_classification")
+            span.set_attribute("firewall.result", "invalid")
+            return FirewallResult(is_valid=False, error=f"[FIREWALL] {error}", details=details)
+        details["checks_passed"].append("information_classification")
 
-    # Check information classification
-    if entity.information_classification not in CLASSIFICATION_LEVEL_SET:
-        return ValidationResult(
-            is_valid=False,
-            error=f"[FIREWALL] Invalid info classification '{entity.information_classification}'",
+        # Check coordinates
+        is_valid, error = _check_coordinate_validity(
+            entity.location.lat,
+            entity.location.lon,
         )
+        if not is_valid:
+            details["checks_failed"].append("coordinates")
+            span.set_attribute("firewall.result", "invalid")
+            return FirewallResult(is_valid=False, error=f"[FIREWALL] {error}", details=details)
+        details["checks_passed"].append("coordinates")
 
-    # Check coordinates
-    is_valid, error = _check_coordinate_validity(
-        entity.location.lat,
-        entity.location.lon,
-    )
-    if not is_valid:
-        return ValidationResult(is_valid=False, error=f"[FIREWALL] {error}")
-
-    # Check confidence range
-    if not 0.0 <= entity.confidence <= 1.0:
-        return ValidationResult(
-            is_valid=False,
-            error=f"[FIREWALL] Confidence {entity.confidence} out of range [0.0, 1.0]",
-        )
-
-    # Check optional fields
-    if entity.speed_kmh is not None and entity.speed_kmh < 0:
-        return ValidationResult(
-            is_valid=False,
-            error=f"[FIREWALL] Speed cannot be negative: {entity.speed_kmh}",
-        )
-
-    if entity.heading is not None and not 0 <= entity.heading < 360:
-        return ValidationResult(
-            is_valid=False,
-            error=f"[FIREWALL] Heading {entity.heading} out of range [0, 360)",
-        )
-
-    # Check for prompt injection in comments
-    if entity.comments:
-        is_safe, issues = _check_prompt_injection(entity.comments)
-        if not is_safe:
-            return ValidationResult(
+        # Check confidence range
+        if not (0.0 <= entity.confidence <= 1.0):
+            details["checks_failed"].append("confidence")
+            span.set_attribute("firewall.result", "invalid")
+            return FirewallResult(
                 is_valid=False,
-                error=f"[FIREWALL] Injection in comments: {issues[0]}",
+                error=f"[FIREWALL] Confidence {entity.confidence} out of range [0.0, 1.0]",
+                details=details,
             )
+        details["checks_passed"].append("confidence")
 
-    return ValidationResult(is_valid=True)
+        # Check optional fields
+        if entity.speed_kmh is not None and entity.speed_kmh < 0:
+            details["checks_failed"].append("speed")
+            span.set_attribute("firewall.result", "invalid")
+            return FirewallResult(
+                is_valid=False,
+                error=f"[FIREWALL] Speed cannot be negative: {entity.speed_kmh}",
+                details=details,
+            )
+        details["checks_passed"].append("speed")
+
+        if entity.heading is not None and not (0 <= entity.heading < 360):
+            details["checks_failed"].append("heading")
+            span.set_attribute("firewall.result", "invalid")
+            return FirewallResult(
+                is_valid=False,
+                error=f"[FIREWALL] Heading {entity.heading} out of range [0, 360)",
+                details=details,
+            )
+        details["checks_passed"].append("heading")
+
+        # Check for prompt injection in comments
+        if entity.comments:
+            is_safe, issues = _check_prompt_injection(entity.comments)
+            if not is_safe:
+                details["checks_failed"].append("comments_injection")
+                span.set_attribute("firewall.result", "invalid")
+                return FirewallResult(
+                    is_valid=False,
+                    error=f"[FIREWALL] Injection in comments: {issues[0]}",
+                    details=details,
+                )
+        details["checks_passed"].append("comments")
+
+        span.set_attribute("firewall.result", "valid")
+        return FirewallResult(is_valid=True, details=details)
 
 
 def validate_dissemination(
+    recipient_id: str,
     recipient_access_level: str,
-    highest_classification: str,
-    entity_ids: list[str],
+    highest_classification_sent: str,
+    information_subset: list[str],
     is_deception: bool = False,
-) -> ValidationResult:
+) -> FirewallResult:
     """
     Validate dissemination decision for security compliance.
 
     Ensures:
     - Classification level is valid
     - Access level is valid
-    - Recipient has sufficient access for data classification
+    - Recipient has sufficient access level for data classification
     - Information subset is not empty
-    - Special handling for enemy_access (deception operations)
+    - Special handling for enemy_access (honeypot/deception)
 
     Args:
+        recipient_id: Recipient identifier.
         recipient_access_level: Recipient's access level.
-        highest_classification: Highest classification in transmission.
-        entity_ids: List of entity IDs being shared.
-        is_deception: Whether this is disinformation for adversary.
+        highest_classification_sent: Highest classification in transmission.
+        information_subset: List of entity IDs being shared.
+        is_deception: Whether this is disinformation for enemy.
 
     Returns:
-        ValidationResult with is_valid and error.
+        FirewallResult with validation status and details.
+
+    Example:
+        >>> result = validate_dissemination(
+        ...     recipient_id="allied_unit",
+        ...     recipient_access_level="secret_access",
+        ...     highest_classification_sent="CONFIDENTIAL",
+        ...     information_subset=["entity_001"],
+        ... )
     """
-    # Validate classification level
-    if highest_classification not in CLASSIFICATION_LEVEL_SET:
-        return ValidationResult(
-            is_valid=False,
-            error=f"[FIREWALL] Invalid classification level '{highest_classification}'",
-        )
+    with traced_operation(
+        tracer,
+        "validate_dissemination",
+        {
+            "recipient_id": recipient_id,
+            "access_level": recipient_access_level,
+            "classification": highest_classification_sent,
+            "is_deception": is_deception,
+        },
+    ) as span:
+        details: dict[str, Any] = {
+            "recipient_id": recipient_id,
+            "access_level": recipient_access_level,
+            "classification": highest_classification_sent,
+            "entity_count": len(information_subset),
+        }
 
-    # Validate access level
-    if recipient_access_level not in ACCESS_LEVELS:
-        return ValidationResult(
-            is_valid=False,
-            error=f"[FIREWALL] Invalid access level '{recipient_access_level}'",
-        )
+        # Validate classification level
+        is_valid, error = _check_information_classification_validity(highest_classification_sent)
+        if not is_valid:
+            span.set_attribute("firewall.result", "invalid")
+            return FirewallResult(is_valid=False, error=f"[FIREWALL] {error}", details=details)
 
-    # Validate entity_ids not empty
-    if not entity_ids:
-        return ValidationResult(
-            is_valid=False,
-            error="[FIREWALL] Entity IDs list cannot be empty",
-        )
+        # Validate access level
+        is_valid, error = _check_access_level_validity(recipient_access_level)
+        if not is_valid:
+            span.set_attribute("firewall.result", "invalid")
+            return FirewallResult(is_valid=False, error=f"[FIREWALL] {error}", details=details)
 
-    # Special case: enemy_access
-    if recipient_access_level == "enemy_access":
-        if highest_classification != "UNCLASSIFIED" and not is_deception:
-            return ValidationResult(
+        # Special case: enemy_access
+        if recipient_access_level.lower() == "enemy_access":
+            # Enemy must ONLY receive UNCLASSIFIED data (unless deception)
+            if highest_classification_sent.upper() != "UNCLASSIFIED":
+                if not is_deception:
+                    span.set_attribute("firewall.result", "blocked")
+                    span.set_attribute("firewall.reason", "enemy_data_leak")
+                    return FirewallResult(
+                        is_valid=False,
+                        error=(
+                            f"[FIREWALL] CRITICAL: Attempting to send {highest_classification_sent} "
+                            f"data to enemy_access recipient WITHOUT deception flag! "
+                            f"This could be a data leak!"
+                        ),
+                        details=details,
+                    )
+                # If is_deception=True, this is intentional disinformation
+                details["deception_operation"] = True
+
+            # Validate information subset for enemy
+            if not information_subset:
+                span.set_attribute("firewall.result", "invalid")
+                return FirewallResult(
+                    is_valid=False,
+                    error="[FIREWALL] Information subset cannot be empty",
+                    details=details,
+                )
+
+            span.set_attribute("firewall.result", "passed")
+            return FirewallResult(is_valid=True, details=details)
+
+        # Normal access control check (read-down principle)
+        if not can_access_classification(recipient_access_level, highest_classification_sent):
+            span.set_attribute("firewall.result", "blocked")
+            span.set_attribute("firewall.reason", "access_control_violation")
+            return FirewallResult(
                 is_valid=False,
                 error=(
-                    f"[FIREWALL] CRITICAL: Attempting to send {highest_classification} "
-                    f"data to enemy_access WITHOUT deception flag!"
+                    f"[FIREWALL] Access control violation: "
+                    f"Recipient with '{recipient_access_level}' cannot access "
+                    f"'{highest_classification_sent}' data"
                 ),
+                details=details,
             )
-        return ValidationResult(is_valid=True)
 
-    # Normal access control check (read-down principle)
-    if not can_access_classification(recipient_access_level, highest_classification):
-        return ValidationResult(
-            is_valid=False,
-            error=(
-                f"[FIREWALL] Access violation: '{recipient_access_level}' "
-                f"cannot access '{highest_classification}' data"
-            ),
-        )
+        # Validate information subset
+        if not information_subset:
+            span.set_attribute("firewall.result", "invalid")
+            return FirewallResult(
+                is_valid=False,
+                error="[FIREWALL] Information subset cannot be empty",
+                details=details,
+            )
 
-    return ValidationResult(is_valid=True)
+        span.set_attribute("firewall.result", "passed")
+        return FirewallResult(is_valid=True, details=details)
+
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
 
 
 def get_firewall_stats() -> dict[str, int]:
