@@ -57,6 +57,9 @@ copforge/
 │   │   └── telemetry.py
 │   ├── mcp_servers/         # MCP Servers
 │   │   ├── cop_fusion/      # COP operations (merge, update, query)
+│   │   │   ├── server.py      # Entry point MCP con tools/resources
+│   │   │   ├── state.py       # COPState thread-safe (in-memory)
+│   │   │   └──tools.py       # find_duplicates, merge, update, query, stats
 │   │   └── multimodal/      # Audio, image, document processing
 │   ├── models/              # Pydantic data models
 │   │   ├── cop.py           # EntityCOP, Location, ThreatAssessment
@@ -184,6 +187,19 @@ TELEMETRY_OTEL_EXPORTER_ENDPOINT=http://localhost:4317
 OPENAI_API_KEY=sk-your-key
 ANTHROPIC_API_KEY=sk-ant-your-key
 LLM_DEFAULT_PROVIDER=openai
+```
+
+## Testing
+```bash
+# All tests
+uv run pytest
+
+# Specific tests
+uv run pytest tests/security/test_firewall.py -v
+uv run pytest tests/parsers/test_parsers.py -v
+
+# With coverage
+uv run pytest --cov=src --cov-report=term-missing
 ```
 
 ## Roadmap
