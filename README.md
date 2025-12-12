@@ -57,9 +57,11 @@ copforge/
 │   │   └── telemetry.py
 │   ├── mcp_servers/         # MCP Servers
 │   │   ├── cop_fusion/      # COP operations (merge, update, query)
-│   │   │   ├── server.py      # Entry point MCP con tools/resources
-│   │   │   ├── state.py       # COPState thread-safe (in-memory)
-│   │   │   └──tools.py       # find_duplicates, merge, update, query, stats
+│   │   │   ├── server.py           # Entry point MCP con tools/resources
+│   │   │   ├── state.py            # COPState thread-safe (in-memory)
+│   │   │   ├── tools.py            # find_duplicates, merge, update, query, stats
+│   │   │   ├── cop_sync.py         # Gestor de sincronización
+│   │   │   └── mapa_client.py      # Cliente HTTP para mapa API
 │   │   └── multimodal/      # Audio, image, document processing
 │   ├── models/              # Pydantic data models
 │   │   ├── cop.py           # EntityCOP, Location, ThreatAssessment
@@ -75,6 +77,7 @@ copforge/
 │   │   └── firewall.py
 │   └── utils/
 └── tests/
+    ├── mcp_servers/
     ├── parsers/
     └── security/
 ```
@@ -197,6 +200,8 @@ uv run pytest
 # Specific tests
 uv run pytest tests/security/test_firewall.py -v
 uv run pytest tests/parsers/test_parsers.py -v
+uv run pytest tests/mcp_servers/test_cop_fusion.py -v
+
 
 # With coverage
 uv run pytest --cov=src --cov-report=term-missing
