@@ -34,11 +34,12 @@ CopForge uses a decoupled architecture based on two protocols:
 │  (Deterministic, no LLM)                                            │
 │                                                                     │
 │  Tools:                                                             │
-│  - normalize_entities(entities) → List[EntityCOP]                   │
 │  - find_duplicates(entity, cop) → List[match]                       │
 │  - merge_entities(entity1, entity2) → EntityCOP                     │
 │  - update_cop(entities) → stats                                     │
 │  - query_cop(filters) → List[EntityCOP]                             │
+│  - get_cop_stats() → stats                                          │
+│  - sync_to_mapa() / load_from_mapa() / check_mapa_connection()      │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -49,37 +50,45 @@ CopForge uses a decoupled architecture based on two protocols:
 copforge/
 ├── pyproject.toml
 ├── src/
-│   ├── agents/              # A2A Agents (Ingest Agent, etc.)
-│   │   └── ingest/
-│   ├── core/                # Configuration, constants, telemetry
-│   │   ├── config.py
-│   │   ├── constants.py
-│   │   └── telemetry.py
-│   ├── mcp_servers/         # MCP Servers
-│   │   ├── cop_fusion/      # COP operations (merge, update, query)
-│   │   │   ├── server.py           # Entry point MCP con tools/resources
-│   │   │   ├── state.py            # COPState thread-safe (in-memory)
-│   │   │   ├── tools.py            # find_duplicates, merge, update, query, stats
-│   │   │   ├── cop_sync.py         # Gestor de sincronización
-│   │   │   └── mapa_client.py      # Cliente HTTP para mapa API
-│   │   └── multimodal/      # Audio, image, document processing
-│   ├── models/              # Pydantic data models
-│   │   ├── cop.py           # EntityCOP, Location, ThreatAssessment
-│   │   └── sensor.py        # SensorMessage, format-specific models
-│   ├── parsers/             # Sensor format parsers
-│   │   ├── base_parser.py
-│   │   ├── asterix_parser.py
-│   │   ├── drone_parser.py
-│   │   ├── radio_parser.py
-│   │   ├── manual_parser.py
-│   │   └── parser_factory.py
-│   ├── security/            # Security validation
-│   │   └── firewall.py
+│   ├── agents/                     # A2A Agents
+│   │   └── ingest/                 # Ingest Agent (planned)
+│   ├── core/                       # Configuration, constants, telemetry
+│   │   ├── config.py               # Pydantic Settings for environment config
+│   │   ├── constants.py            # Sensor types, entity types, classifications
+│   │   └── telemetry.py            # LangSmith + OpenTelemetry setup
+│   ├── mcp_servers/                # MCP Servers (using official mcp SDK)
+│   │   ├── cop_fusion/             # COP operations server
+│   │   │   ├── server.py           # MCP server entry point with 8 tools
+│   │   │   ├── state.py            # COPState: thread-safe in-memory store
+│   │   │   ├── tools.py            # Tool implementations (find, merge, query...)
+│   │   │   ├── cop_sync.py         # Bidirectional sync with mapa-puntos-interes
+│   │   │   └── mapa_client.py      # HTTP client for mapa REST API
+│   │   └── multimodal/             # Audio, image, document processing server
+│   │       ├── server.py           # MCP server entry point with 3 tools
+│   │       ├── audio_tools.py      # Whisper + Pyannote diarization
+│   │       ├── image_tools.py      # VLM analysis (GPT-4o, Claude)
+│   │       └── document_tools.py   # PDF, DOCX, TXT extraction
+│   ├── models/                     # Pydantic data models
+│   │   ├── cop.py                  # EntityCOP, Location, ThreatAssessment
+│   │   └── sensor.py               # SensorMessage, format-specific models
+│   ├── parsers/                    # Sensor format parsers (Strategy pattern)
+│   │   ├── base_parser.py          # Abstract base class
+│   │   ├── asterix_parser.py       # ASTERIX radar format (JSON)
+│   │   ├── drone_parser.py         # UAV telemetry and imagery
+│   │   ├── radio_parser.py         # Radio intercept metadata
+│   │   ├── manual_parser.py        # Human reports (SITREP, SPOTREP)
+│   │   └── parser_factory.py       # Factory for parser selection
+│   ├── security/                   # Security validation
+│   │   └── firewall.py             # Multi-layer input validation
 │   └── utils/
 └── tests/
     ├── mcp_servers/
+    │   ├── test_cop_fusion.py      # 39 tests for COP fusion
+    │   └── test_multimodal.py      # 36 tests for multimodal
     ├── parsers/
+    │   └── test_parsers.py         # Parser unit tests
     └── security/
+        └── test_firewall.py        # Firewall unit tests
 ```
 
 ## Implemented Features
@@ -150,6 +159,69 @@ with traced_operation(tracer, "my_operation", {"key": "value"}) as span:
     span.set_attribute("result", result)
 ```
 
+### MCP Server: COP Fusion (`src/mcp_servers/cop_fusion/`)
+
+Server for managing the Common Operational Picture. Built with the official MCP SDK (`from mcp.server import Server`).
+
+**Features:**
+- Thread-safe in-memory state (`COPState`)
+- Haversine-based duplicate detection (spatial + temporal scoring)
+- Bidirectional sync with [mapa-puntos-interes](https://github.com/MartinezAgullo/mapa-puntos-interes) REST API
+- OpenTelemetry tracing on all operations
+
+**Tools (8 total):**
+
+| Tool | Description |
+|------|-------------|
+| `find_duplicates` | Find potential duplicates using Haversine distance + time window + classification |
+| `merge_entities` | Merge two entities (uses newest timestamp location, combines sensors) |
+| `update_cop` | Batch add/update entities with auto-sync to mapa |
+| `query_cop` | Query entities with filters (type, classification, bbox, time, confidence) |
+| `get_cop_stats` | Get COP statistics (entity counts, sync status) |
+| `sync_to_mapa` | Manual push all entities to mapa-puntos-interes |
+| `load_from_mapa` | Manual pull all entities from mapa-puntos-interes |
+| `check_mapa_connection` | Health check for mapa REST API |
+
+```bash
+# Run standalone
+uv run python -m src.mcp_servers.cop_fusion.server
+
+# With MCP Inspector
+npx @anthropic/mcp-inspector uv run python -m src.mcp_servers.cop_fusion.server
+```
+
+### MCP Server: Multimodal (`src/mcp_servers/multimodal/`)
+
+Server for processing audio, images, and documents. Built with the official MCP SDK.
+
+**Tools (3 total):**
+
+| Tool | Description | Requirements |
+|------|-------------|--------------|
+| `transcribe_audio` | Speech-to-text with speaker diarization | Whisper, Pyannote, `HF_TOKEN` |
+| `analyze_image` | VLM-based tactical image analysis | OpenAI/Anthropic API key |
+| `process_document` | Text extraction from documents | PyPDF2, python-docx |
+
+**Supported formats:**
+- Audio: mp3, wav, m4a, flac, ogg, aac, wma
+- Images: jpg, png, gif, bmp, webp, tiff
+- Documents: pdf, txt, docx
+
+**Image analysis types:**
+- `general`: Full tactical assessment
+- `asset_detection`: Military vehicles, aircraft, equipment
+- `terrain`: Geographic and terrain analysis
+- `damage`: Damage assessment
+- `custom`: Custom prompt
+
+```bash
+# Run standalone
+uv run python -m src.mcp_servers.multimodal.server
+
+# With MCP Inspector
+npx @anthropic/mcp-inspector uv run python -m src.mcp_servers.multimodal.server
+```
+
 ## Installation
 
 ```bash
@@ -158,22 +230,20 @@ git clone https://github.com/MartinezAgullo/copforge.git
 cd copforge
 
 # Create virtual environment
-python -m venv .venv # or use: uv venv
+uv venv  # or: python -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 # or: .venv\Scripts\activate  # Windows
 
-
-
 # Install dependencies
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"  # or: pip install -e ".[dev]"
 
 # Run tests
-pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ## Configuration
 
-Configure .env:
+Configure `.env`:
 
 ```bash
 # LangSmith (LLM Tracing)
@@ -190,9 +260,16 @@ TELEMETRY_OTEL_EXPORTER_ENDPOINT=http://localhost:4317
 OPENAI_API_KEY=sk-your-key
 ANTHROPIC_API_KEY=sk-ant-your-key
 LLM_DEFAULT_PROVIDER=openai
+
+# Mapa Integration
+MAPA_BASE_URL=http://localhost:3000
+
+# Multimodal (for speaker diarization)
+HF_TOKEN=hf-your-token
 ```
 
 ## Testing
+
 ```bash
 # All tests
 uv run pytest
@@ -201,7 +278,7 @@ uv run pytest
 uv run pytest tests/security/test_firewall.py -v
 uv run pytest tests/parsers/test_parsers.py -v
 uv run pytest tests/mcp_servers/test_cop_fusion.py -v
-
+uv run pytest tests/mcp_servers/test_multimodal.py -v
 
 # With coverage
 uv run pytest --cov=src --cov-report=term-missing
@@ -212,15 +289,18 @@ uv run pytest --cov=src --cov-report=term-missing
 - [x] Security Firewall
 - [x] Sensor Parsers (ASTERIX, Drone, Radio, Manual)
 - [x] Telemetry (LangSmith + OpenTelemetry)
+- [x] COP Fusion MCP Server
+- [x] Multimodal MCP Server (audio, image, document)
+- [x] Bidirectional sync with mapa-puntos-interes
 - [ ] Ingest Agent (A2A + LangGraph)
-- [ ] COP Fusion MCP Server
-- [ ] Multimodal MCP Server (audio, image, document)
-- [ ] Threat Evaluator Agent
-- [ ] Dissemination Agent
+- [ ] Orchestration system (multi-agent coordination)
+- [ ] Enhanced duplicate detection (velocity, heading, type-specific thresholds)
+- [ ] Change fromo monorepo to multirepo or packages
 
 ## License
 
 LGPL-3.0-or-later
+
 <!--
 tree -I "__pycache__|__init__.py|uv.lock|README.md"
 -->
