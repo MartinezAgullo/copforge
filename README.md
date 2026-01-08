@@ -10,12 +10,12 @@ It is an evolution of the [TIFDA](https://github.com/MartinezAgullo/genai-tifda)
 
 ## Architecture
 
-CopForge uses a decoupled architecture based on two protocols:
+CopForge uses (or intends to use) a decoupled architecture based on two protocols:
 
 - **A2A Protocol** (Agent-to-Agent): For communication between intelligent agents
 - **MCP** (Model Context Protocol): For exposing deterministic tools that agents can invoke
 
-```
+```bash
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        INGEST AGENT                                 │
 │  (A2A Server + LangGraph)                                           │
@@ -50,8 +50,8 @@ CopForge uses a decoupled architecture based on two protocols:
 copforge/
 ├── pyproject.toml
 ├── src/
-│   ├── agents/                     # A2A Agents
-│   │   └── ingest/                 # Ingest Agent (planned)
+│   ├── main.py                     # ✅ NEW: E2E pipeline entry point
+│   ├── mcp_client.py               # ✅ NEW: MCP client for COP Fusion server
 │   ├── core/                       # Configuration, constants, telemetry
 │   │   ├── config.py               # Pydantic Settings for environment config
 │   │   ├── constants.py            # Sensor types, entity types, classifications
@@ -80,15 +80,21 @@ copforge/
 │   │   └── parser_factory.py       # Factory for parser selection
 │   ├── security/                   # Security validation
 │   │   └── firewall.py             # Multi-layer input validation
-│   └── utils/
+│   ├── agents/                     # Future (optional): A2A Agents / LangGraph flows
+│   │   └── ingest/                 # Placeholder for Ingest Agent
+│   │       └── TODO?
+│   └── utils/                      # Utility functions
 └── tests/
     ├── mcp_servers/
     │   ├── test_cop_fusion.py      # 39 tests for COP fusion
     │   └── test_multimodal.py      # 36 tests for multimodal
     ├── parsers/
     │   └── test_parsers.py         # Parser unit tests
-    └── security/
-        └── test_firewall.py        # Firewall unit tests
+    ├── security/
+    │   └── test_firewall.py        # Firewall unit tests
+    │
+    └── integration/                # Future: E2E integration tests
+        └── TODO
 ```
 
 ## Implemented Features
@@ -164,6 +170,7 @@ with traced_operation(tracer, "my_operation", {"key": "value"}) as span:
 Server for managing the Common Operational Picture. Built with the official MCP SDK (`from mcp.server import Server`).
 
 **Features:**
+
 - Thread-safe in-memory state (`COPState`)
 - Haversine-based duplicate detection (spatial + temporal scoring)
 - Bidirectional sync with [mapa-puntos-interes](https://github.com/MartinezAgullo/mapa-puntos-interes) REST API
@@ -203,11 +210,13 @@ Server for processing audio, images, and documents. Built with the official MCP 
 | `process_document` | Text extraction from documents | PyPDF2, python-docx |
 
 **Supported formats:**
+
 - Audio: mp3, wav, m4a, flac, ogg, aac, wma
 - Images: jpg, png, gif, bmp, webp, tiff
 - Documents: pdf, txt, docx
 
 **Image analysis types:**
+
 - `general`: Full tactical assessment
 - `asset_detection`: Military vehicles, aircraft, equipment
 - `terrain`: Geographic and terrain analysis
@@ -221,8 +230,10 @@ uv run python -m src.mcp_servers.multimodal.server
 # With MCP Inspector
 npx @anthropic/mcp-inspector uv run python -m src.mcp_servers.multimodal.server
 ```
+* * * * *
+## 🚀 Quick Start
 
-## Installation
+### Installation
 
 ```bash
 # Clone repository
@@ -230,8 +241,8 @@ git clone https://github.com/MartinezAgullo/copforge.git
 cd copforge
 
 # Create virtual environment
-uv venv  # or: python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
+uv venv # or: python -m venv .venv
+source .venv/bin/activate # Linux/Mac
 # or: .venv\Scripts\activate  # Windows
 
 # Install dependencies
@@ -241,7 +252,7 @@ uv pip install -e ".[dev]"  # or: pip install -e ".[dev]"
 uv run pytest tests/ -v
 ```
 
-## Configuration
+### Configuration
 
 Configure `.env`:
 
@@ -268,7 +279,36 @@ MAPA_BASE_URL=http://localhost:3000
 HF_TOKEN=hf-your-token
 ```
 
-## Testing
+### Execution
+
+#### Prerequisites
+1. **Map visualization** - Download [mapa-puntos-interes](https://github.com/MartinezAgullo/mapa-puntos-interes)
+2. **PostgreSQL** - Required for map backend (usually via Docker Compose in the map repo)
+<!-- The first step is to run the interactive map for the COP. It can be downlodad from [here](https://github.com/MartinezAgullo/mapa-puntos-interes). -->
+
+#### Complete Startup Sequence
+
+```bash
+# Terminal 1: Start PostgreSQL & map visualization
+./start_cop_map.sh
+```
+
+```bash
+# Terminal 2: Run the demo
+uv run python -m src.main
+```
+
+```bash
+# COP Fusion
+uv run python -m src.mcp_servers.cop_fusion.server
+```
+
+```bash
+# With MCP Inspector
+npx @anthropic/mcp-inspector uv run python -m src.mcp_servers.cop_fusion.server
+```
+
+### Testing
 
 ```bash
 # All tests
@@ -292,15 +332,15 @@ uv run pytest --cov=src --cov-report=term-missing
 - [x] COP Fusion MCP Server
 - [x] Multimodal MCP Server (audio, image, document)
 - [x] Bidirectional sync with mapa-puntos-interes
-- [ ] Ingest Agent (A2A + LangGraph)
-- [ ] Orchestration system (multi-agent coordination)
-- [ ] Enhanced duplicate detection (velocity, heading, type-specific thresholds)
-- [ ] Change fromo monorepo to multirepo or packages
+- [ ] Ingest Agent (A2A + LangGraph) OR Ingest AI Flux
+- [ ] Orchestration system (multi-agent coordination) <- Don't know if necessary
+- [ ] Enhanced duplicate detection (velocity, heading, type-specific thresholds) <- Already done in Mosaico project
+- [ ] Transition from monorepo to multirepo or specialized packages
 
 ## License
 
 LGPL-3.0-or-later
 
 <!--
-tree -I "__pycache__|__init__.py|uv.lock|README.md"
+tree -I "__pycache__|__init__.py|uv.lock|README.md|agency_spectrum_copforge.pdf"
 -->
