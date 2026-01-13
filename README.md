@@ -15,7 +15,9 @@ CopForge uses (or intends to use) a decoupled architecture based on two protocol
 - **A2A Protocol** (Agent-to-Agent): For communication between intelligent agents
 - **MCP** (Model Context Protocol): For exposing deterministic tools that agents can invoke
 
-```bash
+![architecture](https://github.com/MartinezAgullo/copforge/blob/main/data/img/Esquema_CopForge_a.png)
+
+<!-- ```bash
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        INGEST AGENT                                 │
 │  (A2A Server + LangGraph)                                           │
@@ -42,7 +44,7 @@ CopForge uses (or intends to use) a decoupled architecture based on two protocol
 │  - sync_to_mapa() / load_from_mapa() / check_mapa_connection()      │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
-```
+``` -->
 
 ## Project Structure
 
