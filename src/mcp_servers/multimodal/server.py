@@ -34,8 +34,9 @@ app = Server("multimodal")
 ListToolsHandler = Callable[[], Awaitable[list[Tool]]]
 CallToolHandler = Callable[[str, dict[str, Any]], Awaitable[list[TextContent]]]
 
-_list_tools = cast(Callable[[ListToolsHandler], ListToolsHandler], app.list_tools())
-_call_tool = cast(Callable[[CallToolHandler], CallToolHandler], app.call_tool())
+_app_any = cast(Any, app)
+_list_tools = cast(Callable[[ListToolsHandler], ListToolsHandler], _app_any.list_tools())
+_call_tool = cast(Callable[[CallToolHandler], CallToolHandler], _app_any.call_tool())
 
 TOOLS = [
     Tool(

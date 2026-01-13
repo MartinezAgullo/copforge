@@ -48,15 +48,22 @@ async def lifespan(_server: Server) -> AsyncIterator[None]:
 
 
 app = Server("cop-fusion")
+
+
 ListToolsHandler = Callable[[], Awaitable[list[Tool]]]
 CallToolHandler = Callable[[str, dict[str, Any]], Awaitable[list[TextContent]]]
 ListResourcesHandler = Callable[[], Awaitable[list[Resource]]]
 ReadResourceHandler = Callable[[str], Awaitable[str]]
 
-_list_tools = cast(Callable[[ListToolsHandler], ListToolsHandler], app.list_tools())
-_call_tool = cast(Callable[[CallToolHandler], CallToolHandler], app.call_tool())
-_list_resources = cast(Callable[[ListResourcesHandler], ListResourcesHandler], app.list_resources())
-_read_resource = cast(Callable[[ReadResourceHandler], ReadResourceHandler], app.read_resource())
+_app_any = cast(Any, app)
+_list_tools = cast(Callable[[ListToolsHandler], ListToolsHandler], _app_any.list_tools())
+_call_tool = cast(Callable[[CallToolHandler], CallToolHandler], _app_any.call_tool())
+_list_resources = cast(
+    Callable[[ListResourcesHandler], ListResourcesHandler], _app_any.list_resources()
+)
+_read_resource = cast(
+    Callable[[ReadResourceHandler], ReadResourceHandler], _app_any.read_resource()
+)
 
 
 TOOLS = [
