@@ -127,6 +127,10 @@ packages = ["src"]
 [tool.hatch.build.targets.sdist]
 include = ["src/"]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
+
 # === Ruff Configuration ===
 [tool.ruff]
 target-version = "py311"
