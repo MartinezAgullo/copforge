@@ -13,9 +13,9 @@ It is an evolution of the [TIFDA](https://github.com/MartinezAgullo/genai-tifda)
 
 CopForge uses (or intends to use) a decoupled architecture based on two protocols:
 
-- **A2A Protocol** (Agent-to-Agent): For communication between intelligent agents (For future if an autonomous AI agent is implemented).
+- **A2A Protocol** (Agent-to-Agent): For communication between intelligent agents. For future if an autonomous AI agent is implemented See discussion [AI Pipeline vs AI Agent](https://github.com/MartinezAgullo/copforge/blob/main/data/docs/agency_spectrum_copforge_V2.pdf).
 <!-- (just maybe, because for DAG we won't use A2A but if we convert this into an actual autonomous AI agent, then A2A will be used). -->
-    CopForge features as of today (DAG):
+    - CopForge features as of today (DAG):
         - Predefined control flow (LangGraph).
         - No self-formulated objectives: The LLM does not define its own goals.
         - Absence of:

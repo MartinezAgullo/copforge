@@ -82,9 +82,17 @@ dev = [
     "bandit>=1.8.0",
 ]
 
+# Multimodal data processing capabilities
+multimodal = [
+  "PyPDF2>=3.0.0",
+  "python-docx>=1.1.0",
+  "openai-whisper @ git+https://github.com/openai/whisper.git",
+  "pyannote.audio>=3.1.0",
+]
+
 # All optional dependencies
 all = [
-    "copforge[db,dev]",
+    "copforge[db,dev,multimodal]",
 ]
 
 [project.scripts]
@@ -179,6 +187,10 @@ module = [
     "langsmith.*",
     "mcp.*",
     "a2a.*",
+    "PyPDF2",
+    "docx",
+    "whisper",
+    "pyannote.*",
 ]
 ignore_missing_imports = true
 
