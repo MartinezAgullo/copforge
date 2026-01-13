@@ -5,9 +5,9 @@ MCP Server: COP Fusion - Deterministic tools for COP operations with mapa sync.
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -48,6 +48,16 @@ async def lifespan(_server: Server) -> AsyncIterator[None]:
 
 
 app = Server("cop-fusion")
+ListToolsHandler = Callable[[], Awaitable[list[Tool]]]
+CallToolHandler = Callable[[str, dict[str, Any]], Awaitable[list[TextContent]]]
+ListResourcesHandler = Callable[[], Awaitable[list[Resource]]]
+ReadResourceHandler = Callable[[str], Awaitable[str]]
+
+_list_tools = cast(Callable[[ListToolsHandler], ListToolsHandler], app.list_tools())
+_call_tool = cast(Callable[[CallToolHandler], CallToolHandler], app.call_tool())
+_list_resources = cast(Callable[[ListResourcesHandler], ListResourcesHandler], app.list_resources())
+_read_resource = cast(Callable[[ReadResourceHandler], ReadResourceHandler], app.read_resource())
+
 
 TOOLS = [
     Tool(
@@ -123,12 +133,12 @@ TOOLS = [
 ]
 
 
-@app.list_tools()  # type: ignore[misc]
+@_list_tools
 async def list_tools() -> list[Tool]:
     return TOOLS
 
 
-@app.call_tool()  # type: ignore[misc]
+@_call_tool
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     with traced_operation(tracer, f"mcp_tool_{name}", {"tool": name}) as span:
         try:
@@ -187,12 +197,12 @@ RESOURCES = [
 ]
 
 
-@app.list_resources()  # type: ignore[misc]
+@_list_resources
 async def list_resources() -> list[Resource]:
     return RESOURCES
 
 
-@app.read_resource()  # type: ignore[misc]
+@_read_resource
 async def read_resource(uri: str) -> str:
     cop_state = get_cop_state()
     if uri == "cop://entities":

@@ -4,7 +4,7 @@ MCP Server: Multimodal - Tools for processing audio, images, and documents.
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
@@ -30,6 +30,12 @@ async def lifespan(_server: Server) -> AsyncIterator[None]:
 
 
 app = Server("multimodal")
+
+ListToolsHandler = Callable[[], Awaitable[list[Tool]]]
+CallToolHandler = Callable[[str, dict[str, Any]], Awaitable[list[TextContent]]]
+
+_list_tools = cast(Callable[[ListToolsHandler], ListToolsHandler], app.list_tools())
+_call_tool = cast(Callable[[CallToolHandler], CallToolHandler], app.call_tool())
 
 TOOLS = [
     Tool(
@@ -145,13 +151,13 @@ Returns: Extracted text content.""",
 ]
 
 
-@app.list_tools()  # type: ignore[misc]
+@_list_tools
 async def list_tools() -> list[Tool]:
     """List available tools."""
     return TOOLS
 
 
-@app.call_tool()  # type: ignore[misc]
+@_call_tool
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool invocations."""
     with traced_operation(tracer, f"mcp_tool_{name}", {"tool": name}) as span:
