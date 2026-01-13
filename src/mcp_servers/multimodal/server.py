@@ -204,10 +204,10 @@ def _format_success_output(tool_name: str, result: dict[str, Any]) -> str:
     if tool_name == "transcribe_audio":
         header = f"""AUDIO TRANSCRIPTION REPORT
 ==========================
-File: {result.get('file_name', 'unknown')}
-Duration: {result.get('duration', 0):.1f} seconds
-Language: {result.get('language', 'unknown')}
-Speakers: {result.get('num_speakers', 1)} detected
+File: {result.get("file_name", "unknown")}
+Duration: {result.get("duration", 0):.1f} seconds
+Language: {result.get("language", "unknown")}
+Speakers: {result.get("num_speakers", 1)} detected
 Status: SUCCESS
 
 TRANSCRIPTION:
@@ -218,9 +218,9 @@ TRANSCRIPTION:
     elif tool_name == "analyze_image":
         header = f"""IMAGE ANALYSIS REPORT
 =====================
-File: {result.get('file_name', 'unknown')}
-Analysis Type: {result.get('analysis_type', 'unknown')}
-Model: {result.get('model_used', 'unknown')}
+File: {result.get("file_name", "unknown")}
+Analysis Type: {result.get("analysis_type", "unknown")}
+Model: {result.get("model_used", "unknown")}
 Status: SUCCESS
 
 ANALYSIS:
@@ -231,9 +231,9 @@ ANALYSIS:
     elif tool_name == "process_document":
         header = f"""DOCUMENT EXTRACTION REPORT
 ==========================
-File: {result.get('file_name', 'unknown')}
-Format: {result.get('format', 'unknown').upper()}
-Lines extracted: {result.get('num_lines', 0)}
+File: {result.get("file_name", "unknown")}
+Format: {result.get("format", "unknown").upper()}
+Lines extracted: {result.get("num_lines", 0)}
 Status: SUCCESS
 
 CONTENT:
@@ -253,11 +253,11 @@ def _format_error_output(tool_name: str, result: dict[str, Any]) -> str:
     }.get(tool_name, "REPORT")
 
     return f"""{report_type}
-{'=' * len(report_type)}
+{"=" * len(report_type)}
 Status: FAILED
 
-ERROR: {result.get('error', 'Unknown error')}
-{'=' * len(report_type)}
+ERROR: {result.get("error", "Unknown error")}
+{"=" * len(report_type)}
 """
 
 
